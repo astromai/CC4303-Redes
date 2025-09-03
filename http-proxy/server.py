@@ -9,6 +9,12 @@ def receive_full_message(connection_socket, buff_size, end_sequence):
         recv_message = connection_socket.recv(buff_size)
         full_message += recv_message
         is_end_of_message = contains_end_of_message(full_message.decode(), end_sequence)
+    
+    ''' 
+    Debugging message
+    print(repr(full_message.decode()))
+    print(len(full_message.decode()))
+    ''' 
 
     full_message = remove_end_of_message(full_message.decode(), end_sequence)
     return full_message
@@ -22,10 +28,31 @@ def remove_end_of_message(full_message, end_sequence):
     index = full_message.rfind(end_sequence)
     return full_message[:index]
 
-# Server initialization 
+# parser_HTTP_message: string -> dict[string, List[string]]
+# Simple HTTP message parser, returns a dictionary with start line and headers
+def parse_HTTP_message(http_message):
+    lines = http_message.split("\r\n")
+    start_line = lines[0]
+    headers = lines[1:]
+    headers = [h for h in headers if h]
+    return {
+        "start_line": start_line,   # string: start line
+        "headers": headers          # List[string]: list of headers
+    }
+
+# create_HTTP_message: dict -> string
+# Simple HTTP message creator from a dictionary
+def create_HTTP_message(http_dataStruct):
+    message = http_dataStruct["start_line"]+"\r\n"
+    for header in http_dataStruct["headers"]:
+        message += header + "\r\n"
+    message += "\r\n"
+    return message
+
+# Server initialization
 if __name__ == "__main__":
     buff_size = 4
-    end_of_message = "\n"
+    end_of_message = "\r\n\r\n"
     new_socket_address = ('localhost', 8000)
 
     print('Creando socket - Servidor')
