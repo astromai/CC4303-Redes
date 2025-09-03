@@ -1,7 +1,6 @@
 import socket
 
 def receive_full_message(connection_socket, buff_size, end_sequence):
-
     recv_message = connection_socket.recv(buff_size)
     full_message = recv_message
     is_end_of_message = contains_end_of_message(full_message.decode(), end_sequence)
@@ -23,6 +22,7 @@ def remove_end_of_message(full_message, end_sequence):
     index = full_message.rfind(end_sequence)
     return full_message[:index]
 
+# Server initialization 
 if __name__ == "__main__":
     buff_size = 4
     end_of_message = "\n"
