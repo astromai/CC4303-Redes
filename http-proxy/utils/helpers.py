@@ -6,7 +6,7 @@ now = time.time()
 http_date = formatdate(timeval=now, localtime=False, usegmt=True)
 
 
-# parser_HTTP_message: string -> dict[string, List[string]]
+# parser_HTTP_message: string -> dict[string, List[string], string]
 # Simple HTTP message parser, returns a dictionary with start line and headers
 def parse_HTTP_message(http_message):
     separator = "\r\n\r\n"
