@@ -8,7 +8,7 @@ class SocketTCP:
         self.destino = (None, None)
         self.origen = (None, None)
         self.num_seq = 0
-        self.timeout = 0.1  # Segundos
+        self.timeout = 1  # Segundos
         self.conectado = False
         self.buffer_size = 16  # Tamaño máximo de paquete
         self.message_length = 0  # Largo del mensaje que se está recibiendo
@@ -131,6 +131,7 @@ class SocketTCP:
         length_segment = self.create_segment(seq=self.num_seq, data=str(message_length).encode())
         
         # Stop & Wait para el length
+        retries = 0
         while True:
             self.send_con_perdidas_tcp(length_segment)
             self.sock.settimeout(self.timeout)
@@ -143,6 +144,8 @@ class SocketTCP:
                     self.num_seq += 1
                     break
             except socket.timeout:
+                retries += 1
+                print(f"Timeout, reintentando {retries} veces")
                 continue
         
         # Ahora enviar el mensaje en trozos de 16 bytes
@@ -183,8 +186,9 @@ class SocketTCP:
             while True:
                 data, _ = self.recv_con_perdidas_tcp()
                 length_parsed = self.parse_segment(data)
-                
+                print("DEBUG length_parsed:", length_parsed)
                 if length_parsed and length_parsed["data"]:
+                    print("DEBUG length_parsed['data']:", length_parsed["data"])
                     # Enviar ACK
                     ack_segment = self.create_segment(ack=1, seq=length_parsed["seq"] + 1)
                     self.send_con_perdidas_tcp(ack_segment)

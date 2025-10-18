@@ -12,7 +12,7 @@ server_socketTCP.bind(address)
 print(f"Servidor vinculado a {address}")
 print("Esperando conexión del cliente...")
 
-connection_socketTCP, new_address = server_socketTCP.accept()
+connection_socketTCP, new_address = server_socketTCP.accept(loss_probability=30)
 
 if connection_socketTCP:
     print(f"¡Handshake exitoso!")

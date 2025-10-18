@@ -10,7 +10,7 @@ print(f"Conectando al servidor en {address}")
 client_socketTCP = SocketTCP.SocketTCP()
 print("Cliente creado, iniciando handshake...")
 
-client_socketTCP.connect(address)
+client_socketTCP.connect(address, loss_probability=30)
 
 print(f"¡Handshake completado!")
 print(f"Conectado al servidor: {client_socketTCP.destino}")
