@@ -17,6 +17,7 @@ class SocketTCP:
         self.message_length = 0  # Largo del mensaje que se está recibiendo
         self.bytes_received = 0  # Bytes recibidos hasta el momento
         self.receive_buffer = b""  # Buffer para datos recibidos
+        self.number_of_sent_segments = 0  # Contador de segmentos enviados
 
     @staticmethod
     def create_segment(syn=0, ack=0, fin=0, seq=0, data=bytes()):
@@ -260,6 +261,7 @@ class SocketTCP:
                 if data is not None:
                     segment = self.create_segment(seq=seq, data=data)
                     udp_socket.sendto(segment, self.destino, timer_index=window_index)
+                    self.number_of_sent_segments += 1
                     if debug:
                         print(f"[DEBUG CC] Enviando segmento {next_seq}: seq={seq}, len={len(data)}")
                     next_seq += 1
@@ -307,21 +309,26 @@ class SocketTCP:
                     if segments_acked > 0:
                         # PARTE 3: Actualizar window_size según cwnd
                         old_window_size = window_size
-                        window_size = congestion_controler.get_MSS_in_cwnd()
+                        new_window_size = congestion_controler.get_MSS_in_cwnd()
                         
                         if debug:
                             print(f"[DEBUG CC] Después de ACK:")
                             print(f"  - Segmentos confirmados: {segments_acked}")
                             print(f"  - cwnd: {congestion_controler.get_cwnd()} bytes")
-                            print(f"  - window_size: {old_window_size} -> {window_size} segmentos")
+                            print(f"  - window_size: {old_window_size} -> {new_window_size} segmentos")
                             print(f"  - state: {congestion_controler.state}")
                             print(f"  - ssthresh: {congestion_controler.get_ssthresh()}")
                             print(f"  - base: {base}/{len(data_list)}")
                         
-                        # Actualizar tamaño de ventana y timer list
-                        if window_size != old_window_size:
-                            sliding_window.update_window_size(window_size)
-                            udp_socket.set_timer_list_length(window_size)
+                        # IMPORTANTE: Actualizar timer_list PRIMERO antes de cambiar window_size
+                        # para evitar IndexError cuando window_size crece
+                        if new_window_size != old_window_size:
+                            # Actualizar timer_list ANTES de window_size
+                            udp_socket.set_timer_list_length(new_window_size)
+                            # Actualizar sliding window
+                            sliding_window.update_window_size(new_window_size)
+                            # Ahora sí actualizar window_size
+                            window_size = new_window_size
                             
                             # Si la ventana creció, enviar nuevos segmentos
                             if window_size > old_window_size:
@@ -347,6 +354,11 @@ class SocketTCP:
                     print(f"  - state: {congestion_controler.state}")
                     print(f"  - ssthresh: {congestion_controler.get_ssthresh()}")
                 
+                # Resetear timers ANTES de redimensionar (usar el tamaño VIEJO)
+                for i in range(old_window_size):
+                    if i < len(udp_socket.timer_list) and udp_socket.timer_list[i] is not None:
+                        udp_socket.stop_timer(i)
+                
                 # Actualizar tamaño de ventana
                 if window_size != old_window_size:
                     sliding_window.update_window_size(window_size)
@@ -354,11 +366,6 @@ class SocketTCP:
                 
                 # Timeout: reenviar todos los segmentos de la ventana (Go Back-N)
                 next_seq = base  # Volver a enviar desde base
-                
-                # Resetear timers
-                for i in range(window_size):
-                    if udp_socket.timer_list[i] is not None:
-                        udp_socket.stop_timer(i)
         
         # Restaurar el socket a modo bloqueante
         self.sock.setblocking(True)
