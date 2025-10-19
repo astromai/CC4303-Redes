@@ -3,13 +3,15 @@ class CongestionControl:
         self.MSS = MSS
         self.cwnd = MSS
         self.ssthresh = None
-        self.state = "slow_start"  # slow_start | congestion_avoidance
+        self.state = "slow_start"
+        self.acks_in_round = 0  # contador de ACKs en la ronda actual
 
+    # --- Getters ---
     def get_cwnd(self):
         return self.cwnd
 
     def get_MSS_in_cwnd(self):
-        return int(self.cwnd / self.MSS)
+        return self.cwnd // self.MSS
 
     def get_ssthresh(self):
         return self.ssthresh
@@ -20,22 +22,27 @@ class CongestionControl:
     def is_state_congestion_avoidance(self):
         return self.state == "congestion_avoidance"
 
+    # --- Eventos ---
     def event_ack_received(self):
         if self.state == "slow_start":
-            # cwnd se duplica en slow start
-            self.cwnd *= 2
-
-            # Si superamos 4*MSS (según test), pasamos a congestion avoidance
-            if self.cwnd >= 4 * self.MSS:
-                self.ssthresh = 4 * self.MSS
-                self.state = "congestion_avoidance"
-
-        elif self.state == "congestion_avoidance":
-            # cwnd crece linealmente (una MSS por ciclo)
+            # crecimiento exponencial
             self.cwnd += self.MSS
+            # pasar a congestion avoidance si llegamos a ssthresh
+            if self.ssthresh is not None and self.cwnd >= self.ssthresh:
+                self.state = "congestion_avoidance"
+        elif self.state == "congestion_avoidance":
+            # crecimiento lineal: +1 MSS por ronda
+            self.acks_in_round += 1
+            if self.acks_in_round >= self.get_MSS_in_cwnd():
+                self.cwnd += self.MSS
+                self.acks_in_round = 0
 
     def event_timeout(self):
-        # Timeout → Reducir cwnd y ajustar ssthresh
+        # calcular nuevo ssthresh como mitad de cwnd actual
         self.ssthresh = int(self.cwnd / 2)
+        if self.ssthresh < self.MSS:
+            self.ssthresh = self.MSS
+        # reiniciar
         self.cwnd = self.MSS
         self.state = "slow_start"
+        self.acks_in_round = 0
