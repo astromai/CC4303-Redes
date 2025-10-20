@@ -17,10 +17,8 @@ print(f"[DEBUG] Número de secuencia inicial del servidor: {connection_socketTCP
 print(f"[DEBUG] Estado de conexión: {connection_socketTCP.conectado}")
 print()
 
-input("Presione Enter para ejecutar Test 1...")
-
-# Test 1: Recibir mensaje de 16 bytes (Go Back-N)
-print("\n=== TEST 1: Recibir 16 bytes (Go Back-N) ===")
+# Test 1: Recibir mensaje de 16 bytes
+print("=== TEST 1: Recibir 16 bytes ===")
 buff_size = 16
 print(f"[DEBUG] Esperando mensaje con buff_size={buff_size}")
 full_message = connection_socketTCP.recv(buff_size, mode="go_back_n")
@@ -33,10 +31,8 @@ else:
     print(f"  Recibido: {full_message}")
 print()
 
-input("Presione Enter para ejecutar Test 2...")
-
-# Test 2: Recibir mensaje de 19 bytes (Go Back-N)
-print("\n=== TEST 2: Recibir 19 bytes (Go Back-N) ===")
+# Test 2: Recibir mensaje de 19 bytes
+print("=== TEST 2: Recibir 19 bytes ===")
 buff_size = 19
 print(f"[DEBUG] Esperando mensaje con buff_size={buff_size}")
 full_message = connection_socketTCP.recv(buff_size, mode="go_back_n")
@@ -49,10 +45,8 @@ else:
     print(f"  Recibido: {full_message}")
 print()
 
-input("Presione Enter para ejecutar Test 3...")
-
-# Test 3: Recibir mensaje de 19 bytes en dos llamadas (14 + 5) (Go Back-N)
-print("\n=== TEST 3: Recibir 19 bytes en dos partes (14 + 5) (Go Back-N) ===")
+# Test 3: Recibir mensaje de 19 bytes en dos llamadas (14 + 5)
+print("=== TEST 3: Recibir 19 bytes en dos partes (14 + 5) ===")
 buff_size = 14
 print(f"[DEBUG] Primera llamada recv con buff_size={buff_size}")
 message_part_1 = connection_socketTCP.recv(buff_size, mode="go_back_n")
@@ -72,10 +66,8 @@ else:
     print(f"  Recibido: {full_message}")
 print()
 
-input("Presione Enter para cerrar conexión...")
-
 # Cerrar conexión
-print("\n=== CERRANDO CONEXIÓN ===")
+print("=== CERRANDO CONEXIÓN ===")
 print("[DEBUG] Esperando cierre iniciado por cliente...")
 connection_socketTCP.recv_close()
 print("[DEBUG] Conexión cerrada correctamente")
