@@ -10,7 +10,7 @@ class SocketTCP:
         self.destino = (None, None)
         self.origen = (None, None)
         self.num_seq = 0
-        self.timeout = 2  # Segundos
+        self.timeout = 0.3  # Segundos (reducido para mejor rendimiento con pérdidas)
         self.conectado = False
         self.buffer_size = 16  # Tamaño máximo de paquete
         self.message_length = 0  # Largo del mensaje que se está recibiendo
