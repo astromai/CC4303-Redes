@@ -13,7 +13,7 @@ print("[SERVIDOR] Esperando conexión del cliente...\n")
 
 # Aceptar conexión
 connection_socketTCP, new_address = server_socketTCP.accept()
-print(f"[SERVIDOR] ✓ Cliente conectado desde {new_address}")
+print(f"[SERVIDOR] Cliente conectado desde {new_address}")
 print("[SERVIDOR] Recibiendo datos...\n")
 
 # Primer recv para obtener el message_length automáticamente
@@ -39,4 +39,4 @@ print("="*80 + "\n")
 # Cerrar conexión
 print("[SERVIDOR] Esperando FIN del cliente (handshake de cierre)...")
 connection_socketTCP.recv_close()
-print("[SERVIDOR] ✓ Conexión cerrada\n")
+print("[SERVIDOR] Conexión cerrada\n")
