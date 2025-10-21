@@ -251,7 +251,7 @@ class SocketTCP:
         
         return result
 
-    def send_using_go_back_n(self, message, debug=False):
+    def send_using_go_back_n(self, message, debug=False, use_cc=True):
         if not self.conectado:
             return
         
@@ -259,12 +259,18 @@ class SocketTCP:
         self.socketUDP.settimeout(self.timeout)
         
         MSS = 8
-        congestion_control = CongestionControl(MSS)
+        if use_cc:
+            congestion_control = CongestionControl(MSS)
+        else:
+            None
         
         message_length_bytes = str(len(message)).encode()
         data_list = [message_length_bytes] + [message[i:i+MSS] for i in range(0, len(message), MSS)]
 
-        window_size = congestion_control.get_MSS_in_cwnd()
+        if use_cc:
+            window_size = congestion_control.get_MSS_in_cwnd()
+        else:
+            window_size = 4  # Ventana fija de 4 segmentos sin control de congestión
         data_window = SlidingWindowCC(window_size, data_list, self.num_seq)
         
         # Variable para rastrear el último seq enviado
@@ -287,7 +293,7 @@ class SocketTCP:
         # Enviar ventana inicial
         send_range(0, window_size)
 
-        if debug:
+        if debug and use_cc:
             print(f"[DEBUG] Estado inicial:")
             print(f"  cwnd = {congestion_control.get_cwnd()} bytes ({window_size} MSS)")
             print(f"  ssthresh = {congestion_control.get_ssthresh()}")
@@ -321,8 +327,11 @@ class SocketTCP:
                     data_window.move_window(steps_to_move)
 
                 # Evento ACK recibido
-                congestion_control.event_ack_received()
-                new_window_size = congestion_control.get_MSS_in_cwnd()
+                if use_cc:
+                    congestion_control.event_ack_received()
+                    new_window_size = congestion_control.get_MSS_in_cwnd()
+                else:
+                    new_window_size = window_size  # Sin cambio en ventana
                 old_window_size = window_size
                 window_size = new_window_size
                 
@@ -338,9 +347,13 @@ class SocketTCP:
                 data_window.update_window_size(new_window_size)
 
                 if debug:
-                    print(f"[DEBUG] ACK {ack_seq} | steps_moved={steps_to_move} | "
-                        f"cwnd={congestion_control.get_cwnd()} ({window_size} MSS) | "
-                        f"state={congestion_control.state}")
+                    if use_cc:
+                        print(f"[DEBUG] ACK {ack_seq} | steps_moved={steps_to_move} | "
+                            f"cwnd={congestion_control.get_cwnd()} ({window_size} MSS) | "
+                            f"state={congestion_control.state}")
+                    else:
+                        print(f"[DEBUG] ACK {ack_seq} | steps_moved={steps_to_move} | "
+                            f"window_size={window_size} segments")
                     
                 if steps_to_move > 0:
                     # La ventana se movió, enviar desde donde quedó el nuevo contenido
@@ -356,16 +369,17 @@ class SocketTCP:
 
             except TimeoutError:
                 # Evento Timeout
-                congestion_control.event_timeout()
-                new_window_size = congestion_control.get_MSS_in_cwnd()
-                old_window_size = window_size
-                window_size = new_window_size
-                data_window.update_window_size(new_window_size)
+                if use_cc:
+                    congestion_control.event_timeout()
+                    new_window_size = congestion_control.get_MSS_in_cwnd()
+                    old_window_size = window_size
+                    window_size = new_window_size
+                    data_window.update_window_size(new_window_size)
                 
-                if debug:
-                    print(f"[DEBUG] Timeout! cwnd={congestion_control.get_cwnd()} "
-                        f"ssthresh={congestion_control.get_ssthresh()} "
-                        f"state={congestion_control.state}")
+                    if debug:
+                        print(f"[DEBUG] Timeout! cwnd={congestion_control.get_cwnd()} "
+                            f"ssthresh={congestion_control.get_ssthresh()} "
+                            f"state={congestion_control.state}")
                 
                 # Reenviar toda la ventana desde el inicio
                 send_range(0, window_size)
@@ -428,12 +442,12 @@ class SocketTCP:
         self.num_seq = expected_seq
         return result
 
-    def send(self, message, mode="stop_and_wait", debug=False):
+    def send(self, message, mode="stop_and_wait", debug=False, use_cc=True):
         if mode == "stop_and_wait":
             self.send_using_stop_and_wait(message)
         elif mode == "go_back_n":
-            self.send_using_go_back_n(message, debug=debug)
-        
+            self.send_using_go_back_n(message, debug=debug, use_cc=use_cc)
+
     def recv(self, buff_size, mode="stop_and_wait"):
         if mode == "stop_and_wait":
             return self.recv_using_stop_and_wait(buff_size)

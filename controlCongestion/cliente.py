@@ -19,12 +19,12 @@ message = content.encode()
 print(f"[CLIENTE] Leídos {len(message)} bytes de stdin\n")
 
 print("[CLIENTE] Enviando datos con Go Back-N + Control de Congestión...")
-client_socketTCP.send(message, mode="go_back_n")
+client_socketTCP.send(message, mode="go_back_n", debug=True, use_cc=True)
 print(f"[CLIENTE] Datos enviados exitosamente")
 print(f"[CLIENTE] Segmentos enviados: {client_socketTCP.number_of_sent_segments}\n")
 
 # Cerrar conexión
-print("[CLIENTE] Cerrando conexión (handshake 4-way)...")
+print("[CLIENTE] Cerrando conexión...")
 print("[CLIENTE] Enviando FIN al servidor...")
 client_socketTCP.close()
 print("[CLIENTE] Conexión cerrada\n")
