@@ -105,7 +105,6 @@ class SocketTCP:
             
             # Stop & Wait para el SYN-ACK
             while True:
-                #new_socket.socketUDP.stop_timer(timer_index=0)
                 new_socket.socketUDP.sendto(syn_ack, client_address, timer_index=0)
                 new_socket.socketUDP.settimeout(new_socket.timeout)
                 
@@ -114,7 +113,6 @@ class SocketTCP:
                     ack_parsed = self.parse_segment(ack_data)
 
                     if ack_parsed and ack_parsed["ack"] == 1:
-                        #new_socket.socketUDP.stop_timer(timer_index=0)
                         new_socket.conectado = True
                         new_socket.num_seq += 1
                         return new_socket, new_socket.origen

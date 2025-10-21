@@ -148,7 +148,7 @@ class SocketTCP:
         
         # Stop & Wait para el length
         while True:
-            self.send_con_perdidas_tcp(length_segment)
+            self.send_con_perdidas_tcp(length_segment, loss_probability=20)
             self.sock.settimeout(self.timeout)
             
             try:
@@ -174,7 +174,7 @@ class SocketTCP:
             
             # Stop & Wait para este segmento
             while True:
-                self.send_con_perdidas_tcp(data_segment)
+                self.send_con_perdidas_tcp(data_segment, loss_probability=20)
                 self.sock.settimeout(self.timeout)
                 
                 try:
@@ -262,6 +262,7 @@ class SocketTCP:
         ack_received = False
         
         while timeout_count < 3:
+            print(f"[CLOSE] Enviando FIN seq={self.num_seq}")
             self.send_con_perdidas_tcp(fin_segment)
             self.sock.settimeout(self.timeout)
             
@@ -272,13 +273,16 @@ class SocketTCP:
                 if ack_parsed and ack_parsed["ack"] == 1 and ack_parsed["seq"] == self.num_seq + 1:
                     self.num_seq += 1
                     ack_received = True
+                    print("[CLOSE] ACK del FIN recibido correctamente.")
                     break
             except socket.timeout:
                 timeout_count += 1
+                print(f"[CLOSE] Timeout esperando ACK del FIN ({timeout_count}/3) → reenvío FIN")
                 continue
         
         # Si no recibimos ACK después de 3 timeouts, asumir que la contraparte se cerró
         if not ack_received:
+            print("[CLOSE] No se recibió ACK tras 3 intentos. Asumo cierre remoto y cierro.")
             self.conectado = False
             self.sock.close()
             return
@@ -290,7 +294,7 @@ class SocketTCP:
         
         while timeout_count < 3:
             self.sock.settimeout(self.timeout)
-            
+            print("[CLOSE] Esperando FIN remoto...")
             try:
                 fin_data, _ = self.recv_con_perdidas_tcp()
                 fin_parsed = self.parse_segment(fin_data)
@@ -298,15 +302,18 @@ class SocketTCP:
                 if fin_parsed and fin_parsed["fin"] == 1:
                     fin_seq = fin_parsed["seq"]
                     fin_received = True
+                    print(f"[CLOSE] FIN remoto recibido (seq={fin_seq}).")
                     break
             except socket.timeout:
                 timeout_count += 1
                 # Reenviar nuestro FIN por si se perdió
-                self.send_con_perdidas_tcp(fin_segment)
+                print(f"[CLOSE] Timeout esperando FIN remoto ({timeout_count}/3) → reenvío FIN propio")
+                self.send_con_perdidas_tcp(fin_segment, loss_probability=20)
                 continue
         
         # Si no recibimos FIN, asumir que la contraparte se cerró
         if not fin_received:
+            print("[CLOSE] No se recibió FIN remoto tras 3 intentos. Cierro igualmente.")
             self.conectado = False
             self.sock.close()
             return
@@ -314,11 +321,13 @@ class SocketTCP:
         # Enviar ACK final 3 veces con timeout entre cada envío
         final_ack = self.create_segment(ack=1, seq=fin_seq + 1)
         for i in range(3):
+            print(f"[CLOSE] Enviando ACK final ({i+1}/3) seq={fin_seq + 1}")
             self.send_con_perdidas_tcp(final_ack)
             if i < 2:
                 time.sleep(self.timeout)
         
         # Cerrar socket y limpiar estado
+        print("[CLOSE] Cierre completado. Cerrando socket.")
         self.conectado = False
         self.sock.close()
 
@@ -328,19 +337,21 @@ class SocketTCP:
             return
         
         # Esperar FIN del otro lado
+        print("[RCLOSE] Esperando FIN del peer...")
         while True:
             fin_data, _ = self.recv_con_perdidas_tcp()
             fin_parsed = self.parse_segment(fin_data)
             
             if fin_parsed and fin_parsed["fin"] == 1:
                 # Enviar ACK por el FIN recibido
+                print(f"[RCLOSE] FIN recibido (seq={fin_parsed['seq']}). Enviando ACK del FIN.")
                 ack_segment = self.create_segment(ack=1, seq=fin_parsed["seq"] + 1)
-                self.send_con_perdidas_tcp(ack_segment)
+                self.send_con_perdidas_tcp(ack_segment, loss_probability=20)
                 break
         
         # Enviar nuestro propio FIN
         fin_segment = self.create_segment(fin=1, seq=self.num_seq)
-        
+        print(f"[RCLOSE] Enviando FIN propio (seq={self.num_seq}). Esperando ACK final...")
         # Stop & Wait para nuestro FIN - hasta 3 timeouts
         timeout_count = 0
         
@@ -353,13 +364,16 @@ class SocketTCP:
                 final_ack_parsed = self.parse_segment(final_ack_data)
                 
                 if final_ack_parsed and final_ack_parsed["ack"] == 1 and final_ack_parsed["seq"] == self.num_seq + 1:
+                    print("[RCLOSE] ACK final recibido. Cierre desde receptor completado.")
                     break
             except socket.timeout:
                 timeout_count += 1
+                print(f"[RCLOSE] Timeout esperando ACK final ({timeout_count}/3). Reintentando...")
                 continue
         
         # Si no recibimos ACK después de 3 timeouts, asumir que la contraparte se cerró
         
         # Cerrar socket y limpiar estado
+        print("[RCLOSE] Cerrando socket.")
         self.conectado = False
         self.sock.close()
