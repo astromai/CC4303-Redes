@@ -1,5 +1,6 @@
 import socket
 import random
+import time
 
 class SocketTCP:
     def __init__(self):
@@ -315,7 +316,6 @@ class SocketTCP:
         for i in range(3):
             self.send_con_perdidas_tcp(final_ack)
             if i < 2:
-                import time
                 time.sleep(self.timeout)
         
         # Cerrar socket y limpiar estado

@@ -27,7 +27,7 @@ while connection_socketTCP.message_length > 0:
     data = connection_socketTCP.recv(16, mode="go_back_n")
     full_content += data
 
-print(f"[SERVIDOR] ✓ Recepción completa: {len(full_content)} bytes\n")
+print(f"[SERVIDOR] Recepción completa: {len(full_content)} bytes\n")
 
 # Mostrar contenido recibido
 print("="*80)

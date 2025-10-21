@@ -1,23 +1,23 @@
-import socket
 import random
+import time
+from utils.socketUDP import SocketUDP
 from utils.slidingWindowCC import SlidingWindowCC
-import CongestionControl
+from CongestionControl import CongestionControl
 
 class SocketTCP:
     def __init__(self):
         #socket UDP
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socketUDP = SocketUDP()
         self.destino = (None, None)
         self.origen = (None, None)
         self.num_seq = 0
-        self.timeout = 0.3  # Segundos (reducido para mejor rendimiento con pérdidas)
+        self.timeout = 0.3  # Segundos
         self.conectado = False
         self.buffer_size = 16  # Tamaño máximo de paquete
         self.message_length = 0  # Largo del mensaje que se está recibiendo
         self.bytes_received = 0  # Bytes recibidos hasta el momento
         self.receive_buffer = b""  # Buffer para datos recibidos
-        self.number_of_sent_segments = 0  # Contador de segmentos enviados
-        self.expected_seq = None  # Número de secuencia esperado (Go-Back-N)
+        self.number_of_sent_segments = 0
 
     @staticmethod
     def create_segment(syn=0, ack=0, fin=0, seq=0, data=bytes()):
@@ -63,7 +63,7 @@ class SocketTCP:
     
     def bind(self, address):
         self.origen = address
-        self.sock.bind(address)
+        self.socketUDP.bind(address)
 
     def connect(self, address):
         self.destino = address
@@ -73,67 +73,71 @@ class SocketTCP:
         
         # Stop & Wait para el SYN
         while True:
-            self.sock.sendto(syn_segment, self.destino)
-            self.sock.settimeout(self.timeout)
+            self.socketUDP.sendto(syn_segment, self.destino, timer_index=0)
+            self.socketUDP.settimeout(self.timeout)
             
             try:
-                response, server_address = self.sock.recvfrom(1024)
+                response, server_address = self.socketUDP.recvfrom(1024)
                 parsed_response = self.parse_segment(response)
 
                 if parsed_response and parsed_response["syn"] == 1 and parsed_response["ack"] == 1:
                     self.num_seq += 1
                     ack_segment = self.create_segment(ack=1, seq=self.num_seq)
-                    self.sock.sendto(ack_segment, server_address)
+                    self.socketUDP.sendto(ack_segment, server_address, timer_index=0)
                     self.destino = server_address
                     self.conectado = True
                     break
-            except socket.timeout:
+            except TimeoutError:
                 continue
 
     def accept(self):
-        data, client_address = self.sock.recvfrom(1024)
+        data, client_address = self.socketUDP.recvfrom(1024)
         parsed_data = self.parse_segment(data)
 
         if parsed_data and parsed_data["syn"] == 1:
             new_socket = SocketTCP()
             new_socket.destino = client_address
             new_socket.origen = (self.origen[0], self.origen[1] + 1)
-            new_socket.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            new_socket.sock.bind(new_socket.origen)
+            new_socket.socketUDP.bind(new_socket.origen)
             new_socket.num_seq = random.randint(0, 100)
 
             syn_ack = new_socket.create_segment(syn=1, ack=1, seq=new_socket.num_seq)
             
             # Stop & Wait para el SYN-ACK
             while True:
-                new_socket.sock.sendto(syn_ack, client_address)
-                new_socket.sock.settimeout(new_socket.timeout)
+                #new_socket.socketUDP.stop_timer(timer_index=0)
+                new_socket.socketUDP.sendto(syn_ack, client_address, timer_index=0)
+                new_socket.socketUDP.settimeout(new_socket.timeout)
                 
                 try:
-                    ack_data, _ = new_socket.sock.recvfrom(1024)
+                    ack_data, _ = new_socket.socketUDP.recvfrom(1024)
                     ack_parsed = self.parse_segment(ack_data)
 
                     if ack_parsed and ack_parsed["ack"] == 1:
+                        #new_socket.socketUDP.stop_timer(timer_index=0)
                         new_socket.conectado = True
                         new_socket.num_seq += 1
                         return new_socket, new_socket.origen
-                except socket.timeout:
+                except TimeoutError:
                     continue
             
         return None, None
 
-    def send_con_perdidas_tcp(self, segment, loss_probability=0):
-        # Similar a send_con_perdidas de utils pero para segmentos TCP
+    def send_con_perdidas_tcp(self, segment, loss_probability=0, start_timer=True):
         random_number = random.randint(0, 100)
         if random_number >= loss_probability:
-            self.sock.sendto(segment, self.destino)
+            if start_timer:
+                self.socketUDP.sendto(segment, self.destino, timer_index=0)
+            else:
+                # Enviar sin iniciar timer (para uso interno de socketUDP)
+                self.socketUDP.socket_udp.sendto(segment, self.destino)
         else:
             print(f"Oh no, se perdió segmento: {segment[:20]}...")
 
     def recv_con_perdidas_tcp(self, loss_probability=0):
         # Similar a recv_con_perdidas de utils pero para segmentos TCP
         while True:
-            buffer, address = self.sock.recvfrom(1024)
+            buffer, address = self.socketUDP.recvfrom(1024)
             random_number = random.randint(0, 100)
             if random_number <= loss_probability:
                 continue
@@ -152,7 +156,7 @@ class SocketTCP:
         # Stop & Wait para el length
         while True:
             self.send_con_perdidas_tcp(length_segment)
-            self.sock.settimeout(self.timeout)
+            self.socketUDP.settimeout(self.timeout)
             
             try:
                 ack_data, _ = self.recv_con_perdidas_tcp()
@@ -161,7 +165,7 @@ class SocketTCP:
                 if ack_parsed and ack_parsed["ack"] == 1 and ack_parsed["seq"] == self.num_seq + 1:
                     self.num_seq += 1
                     break
-            except socket.timeout:
+            except TimeoutError:
                 continue
         
         # Ahora enviar el mensaje en trozos de 16 bytes
@@ -178,7 +182,6 @@ class SocketTCP:
             # Stop & Wait para este segmento
             while True:
                 self.send_con_perdidas_tcp(data_segment)
-                self.sock.settimeout(self.timeout)
                 
                 try:
                     ack_data, _ = self.recv_con_perdidas_tcp()
@@ -187,138 +190,10 @@ class SocketTCP:
                     if ack_parsed and ack_parsed["ack"] == 1 and ack_parsed["seq"] == self.num_seq + 1:
                         self.num_seq += 1
                         break
-                except socket.timeout:
+                except TimeoutError:
                     continue
             
             byte_inicial += self.buffer_size
-
-    def send_using_go_back_n(self, message, debug=False):
-        if not self.conectado:
-            return
-
-        # Control de congestión (Parte 3) - Tahoe simplificado
-        MSS = 8  # bytes
-        congestion_controler = CongestionControl.CongestionControl(MSS)
-
-        # Preparar lista de datos con MSS=8: primero largo, luego segmentos
-        message_length_bytes = str(len(message)).encode()
-        data_list = [message_length_bytes] + [message[i:i+MSS] for i in range(0, len(message), MSS)]
-
-        # window_size inicial desde cwnd/MSS (debe ser 1)
-        window_size = congestion_controler.get_MSS_in_cwnd()
-        
-        if debug:
-            print(f"[CC-DEBUG] init: cwnd={congestion_controler.get_cwnd()} bytes, ssthresh={congestion_controler.get_ssthresh()}, state={'slow_start' if congestion_controler.is_state_slow_start() else 'congestion_avoidance'}, window_size={window_size}")
-
-        # Inicializar ventana deslizante con números de secuencia byte-based
-        sw = SlidingWindowCC(window_size, data_list, self.num_seq)
-
-        # Banderas de envío por índice de ventana
-        sent_flags = [False] * window_size
-        total_bytes = sum(len(d) for d in data_list)
-        bytes_acked = 0
-
-        # Función auxiliar para actualizar tamaño de ventana por cambios en cwnd
-        def refresh_window_size(reason: str):
-            nonlocal window_size, sent_flags
-            new_wnd_size = congestion_controler.get_MSS_in_cwnd()
-            if new_wnd_size < 1:
-                new_wnd_size = 1
-            if new_wnd_size != window_size:
-                if debug:
-                    print(f"[CC-DEBUG] {reason}: cwnd={congestion_controler.get_cwnd()} bytes -> window_size {window_size} -> {new_wnd_size}")
-                # Actualizar ventana deslizante
-                sw.update_window_size(new_wnd_size)
-                # Ajustar banderas
-                if new_wnd_size > window_size:
-                    sent_flags = sent_flags + [False] * (new_wnd_size - window_size)
-                else:
-                    sent_flags = sent_flags[:new_wnd_size]
-                window_size = new_wnd_size
-
-        # Bucle principal hasta acuse de recibo de todos los bytes
-        last_progress_report = 0
-        
-        while bytes_acked < total_bytes:
-            # Reportar progreso cada 1000 bytes
-            if bytes_acked - last_progress_report >= 1000:
-                print(f"[PROGRESO] {bytes_acked}/{total_bytes} bytes ({100*bytes_acked//total_bytes}%)")
-                last_progress_report = bytes_acked
-                
-            # Enviar elementos nuevos en la ventana actual
-            for i in range(window_size):
-                d = sw.get_data(i)
-                if d is None:
-                    continue
-                if not sent_flags[i]:
-                    seq_i = sw.get_sequence_number(i)
-                    segment = self.create_segment(seq=seq_i, data=d)
-                    self.sock.sendto(segment, self.destino)
-                    self.number_of_sent_segments += 1
-                    sent_flags[i] = True
-                    if debug:
-                        print(f"[CC-DEBUG] send: idx={i}, seq={seq_i}, len={len(d)}")
-
-            # Esperar ACKs con timeout
-            self.sock.settimeout(self.timeout)
-            try:
-                ack_bytes, _ = self.sock.recvfrom(1024)
-                ack_parsed = self.parse_segment(ack_bytes)
-                if not ack_parsed:
-                    continue
-                if ack_parsed.get("ack", 0) == 1:
-                    ack_seq = ack_parsed.get("seq", 0)
-                    # calcular cuántos elementos quedan cubiertos por ack_seq
-                    advance = 0
-                    acked_lengths = []
-                    for i in range(window_size):
-                        d = sw.get_data(i)
-                        if d is None:
-                            break
-                        seq_i = sw.get_sequence_number(i)
-                        if seq_i + len(d) <= ack_seq:
-                            acked_lengths.append(len(d))
-                            advance += 1
-                        else:
-                            break
-
-                    if advance > 0:
-                        # Por cada segmento efectivamente nuevo acked, informar al control de congestión
-                        for _ in range(advance):
-                            congestion_controler.event_ack_received()
-                        refresh_window_size("ack")
-
-                        bytes_acked += sum(acked_lengths)
-                        if debug:
-                            print(f"[CC-DEBUG] ack: ack_seq={ack_seq}, advance={advance}, bytes_acked={bytes_acked}/{total_bytes}")
-                        sw.move_window(advance)
-                        sent_flags = sent_flags[advance:] + [False] * advance
-                    # Si no hay avance, es un ACK duplicado - ignorar
-
-            except socket.timeout:
-                # Timeout: notificar a control de congestión y retransmitir toda la ventana
-                congestion_controler.event_timeout()
-                refresh_window_size("timeout")
-                if debug:
-                    print("[CC-DEBUG] timeout: retransmit window")
-                for i in range(window_size):
-                    d = sw.get_data(i)
-                    if d is None:
-                        continue
-                    seq_i = sw.get_sequence_number(i)
-                    segment = self.create_segment(seq=seq_i, data=d)
-                    self.sock.sendto(segment, self.destino)
-                    self.number_of_sent_segments += 1
-                    sent_flags[i] = True
-
-        # Avanzar número de secuencia global (continuidad)
-        self.num_seq = self.num_seq + total_bytes
-
-    def send(self, message, mode="stop_and_wait", debug=False):
-        if mode == "stop_and_wait":
-            self.send_using_stop_and_wait(message)
-        elif mode == "go_back_n":
-            self.send_using_go_back_n(message, debug=debug)
 
     def recv_using_stop_and_wait(self, buff_size):
         if not self.conectado:
@@ -330,7 +205,6 @@ class SocketTCP:
             self.receive_buffer = b""
             
             # Recibir el primer segmento con el largo del mensaje
-            self.sock.settimeout(None)
             while True:
                 data, _ = self.recv_con_perdidas_tcp()
                 length_parsed = self.parse_segment(data)
@@ -338,13 +212,13 @@ class SocketTCP:
                 # Caso borde: servidor reenvía SYN-ACK porque perdió nuestro ACK
                 if length_parsed and length_parsed["syn"] == 1 and length_parsed["ack"] == 1:
                     ack_segment = self.create_segment(ack=1, seq=length_parsed["seq"] + 1)
-                    self.send_con_perdidas_tcp(ack_segment)
+                    self.send_con_perdidas_tcp(ack_segment, start_timer=False)
                     continue
                 
                 if length_parsed and length_parsed["data"]:
                     # Enviar ACK
                     ack_segment = self.create_segment(ack=1, seq=length_parsed["seq"] + 1)
-                    self.send_con_perdidas_tcp(ack_segment)
+                    self.send_con_perdidas_tcp(ack_segment, start_timer=False)
                     
                     # Guardar el largo del mensaje
                     self.message_length = int(length_parsed["data"].decode())
@@ -355,7 +229,6 @@ class SocketTCP:
         
         while len(self.receive_buffer) < bytes_to_receive:
             # Recibir siguiente segmento
-            self.sock.settimeout(None)
             data, _ = self.recv_con_perdidas_tcp()
             data_parsed = self.parse_segment(data)
             
@@ -380,76 +253,189 @@ class SocketTCP:
         
         return result
 
+    def send_using_go_back_n(self, message, debug=False):
+        if not self.conectado:
+            return
+        
+        # Configurar timeout ANTES de enviar cualquier cosa
+        self.socketUDP.settimeout(self.timeout)
+        
+        MSS = 8
+        congestion_control = CongestionControl(MSS)
+        
+        message_length_bytes = str(len(message)).encode()
+        data_list = [message_length_bytes] + [message[i:i+MSS] for i in range(0, len(message), MSS)]
+
+        window_size = congestion_control.get_MSS_in_cwnd()
+        data_window = SlidingWindowCC(window_size, data_list, self.num_seq)
+        
+        # Variable para rastrear el último seq enviado
+        initial_seq = self.num_seq
+        total_bytes = len(message_length_bytes) + len(message)
+                
+        def send_range(start_idx, end_idx_exclusive):
+            for i in range(start_idx, end_idx_exclusive):
+                seg_data = data_window.get_data(i)
+                seg_seq = data_window.get_sequence_number(i)
+                if seg_data is None:
+                    break
+                segment = self.create_segment(seq=seg_seq, data=seg_data)
+                self.socketUDP.stop_timer(timer_index=0)
+                self.socketUDP.sendto(segment, self.destino, timer_index=0)
+                self.number_of_sent_segments += 1
+                if debug:
+                    print(f"[DEBUG] Enviado segmento: seq={seg_seq}, len={len(seg_data)}")
+
+        # Enviar ventana inicial
+        send_range(0, window_size)
+
+        if debug:
+            print(f"[DEBUG] Estado inicial:")
+            print(f"  cwnd = {congestion_control.get_cwnd()} bytes ({window_size} MSS)")
+            print(f"  ssthresh = {congestion_control.get_ssthresh()}")
+            print(f"  state = {congestion_control.state}")
+            print(f"  data_window:\n{data_window}\n")
+
+        while True:
+            try:
+                ack_bytes, _ = self.socketUDP.recvfrom(1024)
+                ack = self.parse_segment(ack_bytes)
+                if not ack or ack["ack"] != 1:
+                    continue
+
+                ack_seq = ack["seq"]
+
+                # Calcular cuántos elementos de la ventana fueron reconocidos
+                steps_to_move = 0
+                for i in range(window_size):
+                    seg_seq = data_window.get_sequence_number(i)
+                    seg_data = data_window.get_data(i)
+                    if seg_seq is None or seg_data is None:
+                        break
+                    # El ACK reconoce hasta (pero no incluyendo) ack_seq
+                    if seg_seq + len(seg_data) <= ack_seq:
+                        steps_to_move += 1
+                    else:
+                        break
+
+                # Mover ventana si hay elementos reconocidos
+                if steps_to_move > 0:
+                    data_window.move_window(steps_to_move)
+
+                # Evento ACK recibido
+                congestion_control.event_ack_received()
+                new_window_size = congestion_control.get_MSS_in_cwnd()
+                old_window_size = window_size
+                window_size = new_window_size
+                
+                # Caso borde: ventana disminuye y ACK está fuera de ella
+                # Mover ventana hasta que el ACK caiga dentro o terminemos
+                while (window_size < old_window_size and 
+                    data_window.get_sequence_number(window_size - 1) is not None and
+                    data_window.get_sequence_number(window_size - 1) + 
+                    len(data_window.get_data(window_size - 1)) <= ack_seq):
+                    data_window.move_window(1)
+                    steps_to_move += 1
+                
+                data_window.update_window_size(new_window_size)
+
+                if debug:
+                    print(f"[DEBUG] ACK {ack_seq} | steps_moved={steps_to_move} | "
+                        f"cwnd={congestion_control.get_cwnd()} ({window_size} MSS) | "
+                        f"state={congestion_control.state}")
+                    
+                if steps_to_move > 0:
+                    # La ventana se movió, enviar desde donde quedó el nuevo contenido
+                    start_idx = max(0, old_window_size - steps_to_move)
+                    send_range(start_idx, window_size)
+                elif window_size > old_window_size:
+                    # La ventana solo creció sin moverse
+                    send_range(old_window_size, window_size)
+
+                # Verificar si terminamos
+                if data_window.get_data(0) is None:
+                    break
+
+            except TimeoutError:
+                # Evento Timeout
+                congestion_control.event_timeout()
+                new_window_size = congestion_control.get_MSS_in_cwnd()
+                old_window_size = window_size
+                window_size = new_window_size
+                data_window.update_window_size(new_window_size)
+                
+                if debug:
+                    print(f"[DEBUG] Timeout! cwnd={congestion_control.get_cwnd()} "
+                        f"ssthresh={congestion_control.get_ssthresh()} "
+                        f"state={congestion_control.state}")
+                
+                # Reenviar toda la ventana desde el inicio
+                send_range(0, window_size)
+
+        if debug:
+            print("[DEBUG] Envío completado correctamente.")
+        
+        # Actualizar num_seq al final
+        self.num_seq = initial_seq + total_bytes
+
+
     def recv_using_go_back_n(self, buff_size):
         if not self.conectado:
             return b""
-
-        # Inicializar expected_seq con el primer segmento válido recibido
+        
         if self.bytes_received == 0 and self.message_length == 0:
             self.receive_buffer = b""
-            self.sock.settimeout(None)  # Modo bloqueante sin timeout
+            
             while True:
-                data, sender = self.recv_con_perdidas_tcp()
-                parsed = self.parse_segment(data)
-                if not parsed:
+                data, _ = self.recv_con_perdidas_tcp()
+                length_parsed = self.parse_segment(data)
+                
+                if length_parsed and length_parsed["syn"] == 1 and length_parsed["ack"] == 1:
+                    ack_segment = self.create_segment(ack=1, seq=length_parsed["seq"] + 1)
+                    self.send_con_perdidas_tcp(ack_segment, start_timer=False)
                     continue
-                # manejar potencial reenvío de SYN-ACK (caso borde)
-                if parsed["syn"] == 1 and parsed["ack"] == 1:
-                    ack_segment = self.create_segment(ack=1, seq=parsed["seq"] + 1)
-                    self.sock.sendto(ack_segment, sender)
-                    continue
-                # primer segmento de datos esperado
-                if self.expected_seq is None:
-                    self.expected_seq = parsed["seq"]
-                # si coincide, procesar como largo de mensaje
-                if parsed["seq"] == self.expected_seq and parsed["data"]:
-                    # interpretar largo
-                    try:
-                        self.message_length = int(parsed["data"].decode())
-                    except ValueError:
-                        self.message_length = 0
-                    self.expected_seq += len(parsed["data"])
-                    # enviar ACK acumulativo
-                    ack = self.create_segment(ack=1, seq=self.expected_seq)
-                    self.sock.sendto(ack, sender)
+                
+                if length_parsed and length_parsed["data"]:
+                    ack_segment = self.create_segment(ack=1, seq=length_parsed["seq"] + len(length_parsed["data"]))
+                    self.send_con_perdidas_tcp(ack_segment, start_timer=False)
+                    
+                    self.message_length = int(length_parsed["data"].decode())
+                    self.num_seq = length_parsed["seq"] + len(length_parsed["data"])
                     break
-                else:
-                    # enviar ACK duplicado con el expected actual
-                    ack = self.create_segment(ack=1, seq=self.expected_seq)
-                    self.sock.sendto(ack, sender)
+        
+        expected_seq = self.num_seq
+        bytes_to_receive = min(buff_size, self.message_length - self.bytes_received)
 
-        # Ya sabemos cuánto debemos recibir. Recibir hasta buff_size o completar mensaje
-        remaining = max(0, self.message_length - self.bytes_received)
-        bytes_to_receive = min(buff_size, remaining)
-
-        self.sock.settimeout(None)  # Modo bloqueante sin timeout
         while len(self.receive_buffer) < bytes_to_receive:
-            data, sender = self.recv_con_perdidas_tcp()
-            parsed = self.parse_segment(data)
-            if not parsed:
-                continue
-            if parsed["data"]:
-                if parsed["seq"] == self.expected_seq:
-                    # en-orden: aceptar y avanzar expected
-                    self.receive_buffer += parsed["data"]
-                    self.expected_seq += len(parsed["data"])
-                # enviar ACK acumulativo (ya sea en-orden o duplicado)
-                ack = self.create_segment(ack=1, seq=self.expected_seq)
-                self.sock.sendto(ack, sender)
-
+            data, _ = self.recv_con_perdidas_tcp()
+            data_parsed = self.parse_segment(data)
+            
+            if data_parsed:
+                if data_parsed["seq"] == expected_seq:
+                    self.receive_buffer += data_parsed["data"]
+                    expected_seq += len(data_parsed["data"])
+                    ack_segment = self.create_segment(ack=1, seq=expected_seq)
+                    self.send_con_perdidas_tcp(ack_segment, start_timer=False)
+                else:
+                    ack_segment = self.create_segment(ack=1, seq=expected_seq)
+                    self.send_con_perdidas_tcp(ack_segment, start_timer=False)
+        
         result = self.receive_buffer[:bytes_to_receive]
         self.receive_buffer = self.receive_buffer[bytes_to_receive:]
         self.bytes_received += len(result)
-
         if self.bytes_received >= self.message_length:
-            # reiniciar estado de recepción para el próximo mensaje
             self.message_length = 0
             self.bytes_received = 0
             self.receive_buffer = b""
-            # expected_seq queda para continuar el flujo de bytes
-
+        self.num_seq = expected_seq
         return result
 
+    def send(self, message, mode="stop_and_wait", debug=False):
+        if mode == "stop_and_wait":
+            self.send_using_stop_and_wait(message)
+        elif mode == "go_back_n":
+            self.send_using_go_back_n(message, debug=debug)
+        
     def recv(self, buff_size, mode="stop_and_wait"):
         if mode == "stop_and_wait":
             return self.recv_using_stop_and_wait(buff_size)
@@ -469,8 +455,9 @@ class SocketTCP:
         ack_received = False
         
         while timeout_count < 3:
+            self.socketUDP.stop_timer(timer_index=0)
             self.send_con_perdidas_tcp(fin_segment)
-            self.sock.settimeout(self.timeout)
+            self.socketUDP.settimeout(self.timeout)
             
             try:
                 ack_data, _ = self.recv_con_perdidas_tcp()
@@ -480,14 +467,14 @@ class SocketTCP:
                     self.num_seq += 1
                     ack_received = True
                     break
-            except socket.timeout:
+            except TimeoutError:
                 timeout_count += 1
                 continue
         
         # Si no recibimos ACK después de 3 timeouts, asumir que la contraparte se cerró
         if not ack_received:
             self.conectado = False
-            self.sock.close()
+            self.socketUDP.close()
             return
         
         # Esperar FIN del otro lado - hasta 3 timeouts
@@ -496,7 +483,7 @@ class SocketTCP:
         fin_seq = 0
         
         while timeout_count < 3:
-            self.sock.settimeout(self.timeout)
+            self.socketUDP.settimeout(self.timeout)
             
             try:
                 fin_data, _ = self.recv_con_perdidas_tcp()
@@ -506,8 +493,9 @@ class SocketTCP:
                     fin_seq = fin_parsed["seq"]
                     fin_received = True
                     break
-            except socket.timeout:
+            except TimeoutError:
                 timeout_count += 1
+                self.socketUDP.stop_timer(timer_index=0)
                 # Reenviar nuestro FIN por si se perdió
                 self.send_con_perdidas_tcp(fin_segment)
                 continue
@@ -515,20 +503,19 @@ class SocketTCP:
         # Si no recibimos FIN, asumir que la contraparte se cerró
         if not fin_received:
             self.conectado = False
-            self.sock.close()
+            self.socketUDP.close()
             return
         
         # Enviar ACK final 3 veces con timeout entre cada envío
         final_ack = self.create_segment(ack=1, seq=fin_seq + 1)
         for i in range(3):
-            self.send_con_perdidas_tcp(final_ack)
+            self.send_con_perdidas_tcp(final_ack, start_timer=False)
             if i < 2:
-                import time
                 time.sleep(self.timeout)
         
         # Cerrar socket y limpiar estado
         self.conectado = False
-        self.sock.close()
+        self.socketUDP.close()
 
     def recv_close(self):
         # Host B: Maneja el cierre iniciado por el otro lado
@@ -553,8 +540,9 @@ class SocketTCP:
         timeout_count = 0
         
         while timeout_count < 3:
+            self.socketUDP.stop_timer(timer_index=0)
             self.send_con_perdidas_tcp(fin_segment)
-            self.sock.settimeout(self.timeout)
+            self.socketUDP.settimeout(self.timeout)
             
             try:
                 final_ack_data, _ = self.recv_con_perdidas_tcp()
@@ -562,7 +550,7 @@ class SocketTCP:
                 
                 if final_ack_parsed and final_ack_parsed["ack"] == 1 and final_ack_parsed["seq"] == self.num_seq + 1:
                     break
-            except socket.timeout:
+            except TimeoutError:
                 timeout_count += 1
                 continue
         
@@ -570,4 +558,4 @@ class SocketTCP:
         
         # Cerrar socket y limpiar estado
         self.conectado = False
-        self.sock.close()
+        self.socketUDP.close()
