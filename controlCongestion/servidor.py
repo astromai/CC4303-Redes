@@ -37,6 +37,6 @@ print(full_content.decode())
 print("="*80 + "\n")
 
 # Cerrar conexión
-print("[SERVIDOR] Esperando FIN del cliente (handshake de cierre)...")
+print("[SERVIDOR] Esperando FIN del cliente...")
 connection_socketTCP.recv_close()
 print("[SERVIDOR] Conexión cerrada\n")
