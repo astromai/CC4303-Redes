@@ -277,7 +277,7 @@ class SocketTCP:
                     break
             except socket.timeout:
                 timeout_count += 1
-                print(f"[CLOSE] Timeout esperando ACK del FIN ({timeout_count}/3) → reenvío FIN")
+                print(f"[CLOSE] Timeout esperando ACK del FIN ({timeout_count}/3) -> reenvío FIN")
                 continue
         
         # Si no recibimos ACK después de 3 timeouts, asumir que la contraparte se cerró
@@ -307,7 +307,7 @@ class SocketTCP:
             except socket.timeout:
                 timeout_count += 1
                 # Reenviar nuestro FIN por si se perdió
-                print(f"[CLOSE] Timeout esperando FIN remoto ({timeout_count}/3) → reenvío FIN propio")
+                print(f"[CLOSE] Timeout esperando FIN remoto ({timeout_count}/3) -> reenvío FIN propio")
                 self.send_con_perdidas_tcp(fin_segment, loss_probability=20)
                 continue
         
