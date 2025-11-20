@@ -1,8 +1,3 @@
-# router.py
-# Versión fusionada: base actividad 1 (formato ; ) + fragmentación (MTU)
-# Uso: python3 router.py <IP> <puerto> <archivo_rutas>
-# Cambios importantes están marcados con comentarios "# CAMBIO:" o "# FIX:" en las funciones.
-
 import sys
 import socket
 import os
@@ -22,7 +17,7 @@ print(f"Tabla de rutas: {router_rutas}")
 # -------------------- utilitarios de formateo (padding) --------------------
 def pad_n(num, n):
     """Devuelve str(num) con ceros a la izquierda hasta largo n."""
-    s = str(int(num))  # asegurar int -> str limpio
+    s = str(int(num))  
     return s.zfill(n)
 
 def pad_port(p):
@@ -35,16 +30,12 @@ def pad_8(n):
     return pad_n(n, 8)
 
 # -------------------- PARSE / CREATE (FORMATO con ; ) --------------------
-# CAMBIO: parse_packet ahora soporta el formato de la actividad 1 ampliado con campos de fragmentación.
-#        Acepta input bytes o str. Retorna dict con tipos correctos (TAMANO, OFFSET, ID, TTL como int).
 def parse_packet(IP_packet):
     # Acepta bytes o str
     packet_str = IP_packet.decode() if isinstance(IP_packet, bytes) else IP_packet
     # Separador de la actividad 1: ';'
     parts = packet_str.split(';')
-    # Soportamos dos formatos:
-    # - formato simple anterior (3 campos): ip;puerto;mensaje
-    # - formato fragmentación (8 campos): ip;puerto;TTL;ID;OFFSET;TAMANO;FLAG;mensaje
+    # No es necesario pero en caso de querer utilizar ambos formatos:
     if len(parts) == 3:
         return {
             'IP': parts[0],
@@ -57,7 +48,6 @@ def parse_packet(IP_packet):
             'MENSAJE': parts[2]
         }
     elif len(parts) >= 8:
-        # Si el mensaje contiene ';' adicionales, juntarlos (partes[7:])
         mensaje = ';'.join(parts[7:])
         return {
             'IP': parts[0],
@@ -72,10 +62,9 @@ def parse_packet(IP_packet):
     else:
         raise ValueError("Paquete con formato desconocido: " + packet_str)
 
-# CAMBIO: create_packet crea siempre la representación con ';' y padding
-#         Los campos TTL(3), PUERTO(4), ID/OFFSET/TAMANO(8) se formatean según enunciado.
+
 def create_packet(parsed_IP_packet):
-    # parsed_IP_packet es dict con campos (IP, PUERTO, TTL, ID, OFFSET, TAMANO, FLAG, MENSAJE)
+
     ip = parsed_IP_packet['IP']
     puerto = pad_port(parsed_IP_packet['PUERTO'])
     ttl = pad_ttl(parsed_IP_packet['TTL'])
@@ -88,22 +77,19 @@ def create_packet(parsed_IP_packet):
     return packet_str.encode()
 
 # -------------------- CHECK_ROUTES (devuelve next_hop y MTU) --------------------
-# CAMBIO: ahora parsea tablas con 6 columnas: red puerto_inicial puerto_final ip_next puerto_next mtu
-#        implementa round-robin por puerto_destino manteniendo una cache 'rutas_cache' similar a la idea de la base.
 rutas_cache = {}   # key: puerto_destino -> lista de (next_ip,next_puerto,mtu)
 rr_index = {}      # key: puerto_destino -> current index
 
 def check_routes(routes_file_name, destination_address):
     dest_ip, dest_puerto = destination_address
 
-    # Si ya tenemos rutas en cache para ese puerto destino, usamos round-robin sobre esa lista
+
     if dest_puerto in rutas_cache and len(rutas_cache[dest_puerto]) > 0:
         idx = rr_index.get(dest_puerto, 0)
         sel = rutas_cache[dest_puerto][idx]
         rr_index[dest_puerto] = (idx + 1) % len(rutas_cache[dest_puerto])
         return ((sel[0], sel[1]), sel[2])
-
-    # Sino, leemos el archivo de rutas (soportando archivos rutas_RX_v3_mtu.txt)
+    
     matching = []
     try:
         with open(routes_file_name, 'r') as f:
@@ -140,9 +126,6 @@ def check_routes(routes_file_name, destination_address):
     return ((sel[0], sel[1]), sel[2])
 
 # -------------------- FRAGMENTACIÓN --------------------
-# CAMBIO: fragment_IP_packet ahora usa el formato de packet (;) y calcula header_len como
-#        len(packet) - len(mensaje_bytes) (robusto para fragmentos ya existentes).
-#        Devuelve lista de bytes (cada fragment es create_packet(...))
 def fragment_IP_packet(IP_packet_bytes, MTU):
     # Si ya cabe, retornar lista de un elemento
     if len(IP_packet_bytes) <= MTU:
@@ -169,7 +152,7 @@ def fragment_IP_packet(IP_packet_bytes, MTU):
     while start < len(mensaje_bytes):
         end = start + payload_max
         parte_bytes = mensaje_bytes[start:end]
-        parte_str = parte_bytes.decode('latin-1')  # Usar latin-1 para preservar todos los bytes
+        parte_str = parte_bytes.decode('latin-1')  
         
         # Determinar FLAG: 1 si hay más fragmentos, 0 si es el último
         flag = 1 if end < len(mensaje_bytes) else 0
@@ -192,8 +175,6 @@ def fragment_IP_packet(IP_packet_bytes, MTU):
     return fragments
 
 # -------------------- REENSAMBLAJE --------------------
-# CAMBIO: reassemble_IP_packet espera una lista de BYTES (fragmentos), los parsea correctamente,
-#        valida offsets contiguos, valida que todos menos el último tengan FLAG=1 y retorna dict si OK.
 def reassemble_IP_packet(fragment_list):
     if not fragment_list:
         return None
@@ -221,7 +202,7 @@ def reassemble_IP_packet(fragment_list):
         return None
 
     # reconstruir mensaje verificando offsets contiguos
-    expected_offset = frags[0]['OFFSET']  # normalmente 0, pero soportamos offsets iniciales
+    expected_offset = frags[0]['OFFSET']  
     mensaje_parts = []
     total_payload = 0
     for f in frags:
@@ -252,11 +233,9 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(server_address)
 print(f"Router escuchando en {router_IP}:{router_puerto}")
 
-# diccionario para almacenar fragmentos por ID
-# key: ID (int) -> list de bytes (fragmentos recibidos, en orden de llegada)
 fragment_buffer = {}
 
-# --- Tests (simples) para parse/create y check_routes (del base) ---
+# Test de funciones parse_packet y create_packet
 print("\n--- Test parse/create (formato fragmentación) ---")
 IP_packet_v1 = "127.0.0.1;8881;010;00000001;00000000;00000005;0;hola".encode()
 parsed = parse_packet(IP_packet_v1)
@@ -265,8 +244,8 @@ recreated = create_packet(parsed)
 print("Recreated bytes:", recreated)
 print("--- Fin test ---\n")
 
+# Test de función check_routes
 print("--- Test check_routes ---")
-# Intenta cargar el archivo de rutas que mencionaste (rutas_R1_v3_mtu.txt etc.)
 if os.path.exists(router_rutas):
     test_res = check_routes(router_rutas, ('127.0.0.1', 8882))
     print("check_routes test:", test_res)
@@ -276,7 +255,7 @@ print("--- Fin test rutas ---\n")
 
 # Bucle principal
 while True:
-    data, address = sock.recvfrom(buff_size)  # data = bytes
+    data, address = sock.recvfrom(buff_size)  
     try:
         MSG = parse_packet(data)
     except Exception as e:
