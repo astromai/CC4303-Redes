@@ -48,7 +48,7 @@ def parse_packet(IP_packet):
             'MENSAJE': parts[2]
         }
     elif len(parts) >= 8:
-        mensaje = ';'.join(parts[7:])
+        mensaje = packet_str.split(";", 7)[7]
         return {
             'IP': parts[0],
             'PUERTO': int(parts[1]),
