@@ -1,7 +1,6 @@
 import sys
 import socket
 
-# Paso 2
 if len(sys.argv) != 4:
     print("Uso: python3 router_ttl.py <IP> <puerto> <archivo_rutas>")
     sys.exit(1)
@@ -14,7 +13,6 @@ router_rutas = sys.argv[3]
 print(f"Router iniciado en {router_IP}:{router_puerto}")
 print(f"Tabla de rutas: {router_rutas}")
 
-# Paso 10: parse_packet modificado para TTL
 def parse_packet(IP_packet):
     packet_str = IP_packet.decode()
     parts = packet_str.split(';')
@@ -28,7 +26,6 @@ def parse_packet(IP_packet):
     
     return parsed_packet
 
-# Paso 10: create_packet modificado para TTL
 def create_packet(parsed_IP_packet):
     packet_str = f"{parsed_IP_packet['ip']};{parsed_IP_packet['puerto']};{parsed_IP_packet['ttl']};{parsed_IP_packet['mensaje']}"
     return packet_str
@@ -36,7 +33,6 @@ def create_packet(parsed_IP_packet):
 # Diccionario global para round-robin
 round_robin_counter = {}
 
-# Paso 5 y 8: check_routes con round-robin
 def check_routes(routes_file_name, destination_address):
     dest_ip, dest_puerto = destination_address
     
@@ -112,8 +108,8 @@ while True:
     destination_address = (dest_ip, dest_puerto)
     paquete_ip = f"{dest_ip};{dest_puerto};{ttl};{mensaje}"
     
-    # Paso 11: Verificar TTL
-    if ttl == 0:
+    # Paso 2: Verificar TTL > 0
+    if ttl <= 0:
         print(f"Se recibió paquete {paquete_ip} con TTL 0")
         continue
     
@@ -129,7 +125,6 @@ while True:
             # No hay ruta
             print(f"No hay rutas hacia {destination_address} para paquete {paquete_ip}")
         else:
-            # Paso 12: Decrementar TTL antes de hacer forward
             parsed_packet['ttl'] = ttl - 1
             
             # Hacer forward

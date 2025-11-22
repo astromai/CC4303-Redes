@@ -2,15 +2,16 @@ import sys
 import socket
 
 # Validar argumentos
-if len(sys.argv) != 4:
-    print("Uso: python3 prueba_router.py <headers> <IP_router_inicial> <puerto_router_inicial>")
-    print("Ejemplo: python3 prueba_router.py 127.0.0.1;8885;10 127.0.0.1 8881")
+if len(sys.argv) != 5:
+    print("Uso: python3 prueba_router.py <headers> <IP_router_inicial> <puerto_router_inicial> <archivo>")
+    print("Ejemplo: python3 prueba_router.py \"127.0.0.1;8885;10\" 127.0.0.1 8881 archivo.txt")
     sys.exit(1)
 
 # Obtener parámetros
 headers = sys.argv[1]  # Formato: IP_destino;puerto_destino;TTL
 router_inicial_IP = sys.argv[2]
 router_inicial_puerto = int(sys.argv[3])
+filename = sys.argv[4]
 
 # Parsear headers
 header_parts = headers.split(';')
@@ -24,8 +25,7 @@ ttl = header_parts[2]
 
 print(f"Enviando paquetes a destino {dest_ip}:{dest_puerto} con TTL={ttl}")
 print(f"Router inicial: {router_inicial_IP}:{router_inicial_puerto}")
-print("Ingrese el nombre del archivo a enviar:")
-filename = input().strip()
+print(f"Archivo: {filename}\n")
 
 # Crear socket UDP
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
