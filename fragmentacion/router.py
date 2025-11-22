@@ -30,7 +30,7 @@ def pad_8(n):
     return pad_n(n, 8)
 
 # -------------------- PARSE / CREATE (FORMATO con ; ) --------------------
-def parse_packet(IP_packet):
+def parse_packet(IP_packet):    
     # Acepta bytes o str
     packet_str = IP_packet.decode() if isinstance(IP_packet, bytes) else IP_packet
     # Separador de la actividad 1: ';'
@@ -252,6 +252,103 @@ if os.path.exists(router_rutas):
 else:
     print(f"Archivo de rutas {router_rutas} no encontrado para test.")
 print("--- Fin test rutas ---\n")
+
+
+# Test de fragmentación y reensamblaje
+
+# Crear dos paquetes completos con headers válidos
+print("--- Test fragmentación ---")
+pktA = create_packet({
+    'IP': '127.0.0.1',
+    'PUERTO': 9999,
+    'TTL': 10,
+    'ID': 11111111,
+    'OFFSET': 0,
+    'TAMANO': 14,
+    'FLAG': 0,
+    'MENSAJE': "HOLA_HOLA_TEST"
+})
+
+pktB = create_packet({
+    'IP': '127.0.0.1',
+    'PUERTO': 9999,
+    'TTL': 10,
+    'ID': 22222222,
+    'OFFSET': 0,
+    'TAMANO': 14,
+    'FLAG': 0,
+    'MENSAJE': "BBBBBBBBBBBBBB"
+})
+
+TEST_MTU = 30 
+
+# Obtener fragmentos con TU función real
+fragsA = fragment_IP_packet(pktA, TEST_MTU)
+fragsB = fragment_IP_packet(pktB, TEST_MTU)
+
+print("Fragmentos de A (ID 11111111):")
+for f in fragsA:
+    print("  ", f)
+
+print("Fragmentos de B (ID 22222222):")
+for f in fragsB:
+    print("  ", f)
+
+# Buffer interno de test
+buffer_test = {}
+
+def alimentar(fragmento):
+    parsed = parse_packet(fragmento)
+    pkt_id = parsed['ID']
+
+    if pkt_id not in buffer_test:
+        buffer_test[pkt_id] = []
+
+    buffer_test[pkt_id].append(fragmento)
+
+    res = reassemble_IP_packet(buffer_test[pkt_id])
+    if res is not None:
+        print(f"   → REENSAMBLADO ID {pkt_id}: {res['MENSAJE']}")
+        del buffer_test[pkt_id]
+    else:
+        print(f"   (ID {pkt_id}) faltan fragmentos...")
+
+# ------------------------------
+# 1) ORDEN NORMAL
+# ------------------------------
+print("\n1) Enviando A en ORDEN:")
+for f in fragsA:
+    alimentar(f)
+
+print("\n1) Enviando B en ORDEN:")
+for f in fragsB:
+    alimentar(f)
+
+# ------------------------------
+# 2) DESORDENADO
+# ------------------------------
+print("\n2) Enviando A DESORDENADO:")
+for f in reversed(fragsA):
+    alimentar(f)
+
+print("\n2) Enviando B DESORDENADO:")
+for f in reversed(fragsB):
+    alimentar(f)
+
+# ------------------------------
+# 3) INTERCALADOS A/B
+# ------------------------------
+print("\n3) Enviando intercalado A/B:")
+mezcla = []
+for a, b in zip(fragsA, fragsB):
+    mezcla.append(a)
+    mezcla.append(b)
+
+for f in mezcla:
+    alimentar(f)
+
+print("--- Fin test fragmentación ---")
+
 
 # Bucle principal
 while True:
